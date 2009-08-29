@@ -1,0 +1,21 @@
+
+Friday 28 August 2009 - 
+
+Initial version created/realesed based on the code AbsMixer,
+which was written by Paul Sherman and Rob Eberts.
+
+Changes from the previous program which have taken place include;
+
+ - New UI similar to gnomes mixer applet.
+ - New callbacks to such as close/hide when focus is lost.
+ - Mixer now uses the master control to enable compatibility 
+   with pulse audio as well as alsa.
+ - New Icons which indicate if mute is enabled
+ - Program now calls pavcontrol rather than alsa mixer but 
+   this will be configurable in future versions.
+
+Changes to come;
+
+ - Interface with GLib to provie grahical configurtion.
+ - New Icons.
+ - bug fixes if required.
