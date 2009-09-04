@@ -17,18 +17,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <math.h>
 #include <gdk/gdkkeysyms.h>
 #include <gtk/gtk.h>
-#include <linux/soundcard.h>
+#include <alsa/asoundlib.h>
 #include "callbacks.h"
 #include "main.h"
 #include "support.h"
-#include "actions.h"
-
-int mixer_fd;
-extern int mixer_fd;
-StereoVolume tmpvol;
-struct originalset orig;
 
 #define GLADE_HOOKUP_OBJECT(component,widget,name) \
 g_object_set_data_full (G_OBJECT (component), name, gtk_widget_ref (widget), (GDestroyNotify) gtk_widget_unref)
@@ -50,11 +45,138 @@ static GtkWidget *menuitem_vol = NULL;
 GtkAdjustment *vol_adjustment;
 GdkPixbuf *icon0;
 
+
+static int smixer_level = 0;
+static struct snd_mixer_selem_regopt smixer_options;
+static char card[64] = "default";
+static snd_mixer_elem_t *elem;
+static snd_mixer_t *handle;
+
+
+static snd_mixer_elem_t* alsa_get_mixer_elem(snd_mixer_t *mixer, char *name, int index)
+{
+	snd_mixer_selem_id_t *selem_id;
+	snd_mixer_elem_t* elem;
+	snd_mixer_selem_id_alloca(&selem_id);
+
+	if (index != -1)
+		snd_mixer_selem_id_set_index(selem_id, index);
+	if (name != NULL)
+		snd_mixer_selem_id_set_name(selem_id, name);
+
+	elem = snd_mixer_find_selem(mixer, selem_id);
+
+	return elem;
+}
+
+static alsaset(){
+
+smixer_options.device = card;
+int level = 1;
+int err;
+snd_mixer_selem_id_t *sid;
+snd_mixer_selem_id_alloca(&sid);
+
+if ((err = snd_mixer_open(&handle, 0)) < 0) {
+	error("Mixer %s open error: %s", card, snd_strerror(err));
+	return err;
+}
+if (smixer_level == 0 && (err = snd_mixer_attach(handle, card)) < 0) {
+	error("Mixer attach %s error: %s", card, snd_strerror(err));
+	snd_mixer_close(handle);
+	return err;
+}
+if ((err = snd_mixer_selem_register(handle, smixer_level > 0 ? &smixer_options : NULL, NULL)) < 0) {
+	error("Mixer register error: %s", snd_strerror(err));
+	snd_mixer_close(handle);
+	return err;
+}
+err = snd_mixer_load(handle);
+if (err < 0) {
+	error("Mixer %s load error: %s", card, snd_strerror(err));
+	snd_mixer_close(handle);
+	return err;
+}
+
+elem = snd_mixer_first_elem(handle);
+snd_mixer_selem_get_id(elem, sid);
+
+return 0;
+
+}
+
+static int convert_prange(int val, int min, int max)
+{
+	int range = max - min;
+	int tmp;
+
+	if (range == 0)
+		return 0;
+	val -= min;
+	tmp = rint((double)val/(double)range * 100);
+	return tmp;
+}
+
+
+static int get_percent(int val, int min, int max)
+{
+	static char str[32];
+	int p;
+	
+	p = ceil((val) * ((max) - (min)) * 0.01 + (min));
+	return p;
+}
+
+setvol(int vol)
+{
+
+long pmin = 0, pmax = 0;
+snd_mixer_selem_get_playback_volume_range(elem, &pmin, &pmax);
+
+vol = get_percent(vol,pmin,pmax);
+
+snd_mixer_selem_set_playback_volume(elem, SND_MIXER_SCHN_FRONT_LEFT,vol);
+snd_mixer_selem_set_playback_volume(elem, SND_MIXER_SCHN_FRONT_RIGHT,vol);
+
+}
+
+setmute()
+{
+
+int muted;
+snd_mixer_selem_get_playback_switch(elem, SND_MIXER_SCHN_FRONT_LEFT, &muted);
+
+if (muted == 1) {
+	snd_mixer_selem_set_playback_switch(elem, SND_MIXER_SCHN_FRONT_LEFT,0);
+} else {
+	snd_mixer_selem_set_playback_switch(elem, SND_MIXER_SCHN_FRONT_LEFT,1);
+}
+
+
+}
+
+getvol()
+{
+
+	long pmin = 0, pmax = 0;
+	snd_mixer_selem_get_playback_volume_range(elem, &pmin, &pmax);
+
+	int rr;
+	long lr = rr;
+	snd_mixer_selem_get_playback_volume(elem, SND_MIXER_SCHN_FRONT_RIGHT, &lr);
+	rr = lr;
+	int vol;
+	vol=convert_prange(rr,pmin,pmax);
+
+	return vol;
+
+}
+
 void on_mixer(void)
 {	
 
 	int no_pavucontrol = system("which pavucontrol | grep /pavucontrol");
-	int no_alsamixer = system("which gnome-volume-control | grep /gnome-volume-control");
+	int no_alsamixer = system("which alsamixergui | grep /alsamixergui");
 
 	if (no_pavucontrol) {
  		if (no_alsamixer) {
@@ -62,16 +184,16 @@ void on_mixer(void)
 			GTK_DIALOG_DESTROY_WITH_PARENT,
 			GTK_MESSAGE_ERROR,
 			GTK_BUTTONS_CLOSE,
-				"\nNo mixer application was not found on your system.\n\nYou will need to install either pavucontrol or gnome-volume-control if you wish to use a mixer from the volume control.");
+				"\nNo mixer application was not found on your system.\n\nYou will need to install either pavucontrol or alsamixergui if you wish to use a mixer from the volume control.");
 			gtk_dialog_run (GTK_DIALOG (dialog));
 			gtk_widget_destroy (dialog);
 			} else {
-			const char *cmd1 = "gnome-volume-control&";
-			system(cmd1);
+			const char *cmd1 = "alsamixergui&";
+			if (system(cmd1)) { printf ("Failed to execute command \"alsamixergui\" \n"); }
 			}
     	} else {
 		const char *cmd = "pavucontrol&";
-		system(cmd);
+		if (system(cmd)) { printf ("Failed to execute command \"pavucontrol\" \n"); }
 	}
 
 gtk_widget_hide (window1);
@@ -165,7 +287,7 @@ create_window1 (void)
 	g_signal_connect ((gpointer) window1, "focus-out-event",G_CALLBACK (hide_me),NULL);
 	g_signal_connect ((gpointer) window1, "button_release_event",G_CALLBACK (hide_me),NULL);
 	g_signal_connect ((gpointer) hscale1, "key_press_event",G_CALLBACK (hide_me),NULL);
-	g_signal_connect ((gpointer) hscale1, "value-changed",G_CALLBACK (on_hscale1_value_change_event),NULL);
+	g_signal_connect ((gpointer) hscale1, "button_release_event",G_CALLBACK (on_hscale1_value_change_event),NULL);
 	g_signal_connect ((gpointer) checkbutton1, "pressed",G_CALLBACK (on_checkbutton1_clicked),NULL);
 	g_signal_connect ((gpointer) button1, "button_press_event",G_CALLBACK (on_mixer),NULL);
 
@@ -182,7 +304,6 @@ create_window1 (void)
 
 	gtk_widget_grab_focus (hscale1);
 	return window1;
-
 }
 
 
@@ -206,7 +327,6 @@ static void popup_callback(GObject *widget, guint button,
 
 static GtkWidget *create_popupmenu(void)
 {
-
 	GtkWidget *menu;
 	GtkWidget *item;
 	GtkWidget *image;
@@ -235,7 +355,6 @@ static GtkWidget *create_popupmenu(void)
 	g_signal_connect(item, "activate",G_CALLBACK(create_about), NULL);
 
 	return menu;
-
 }
 
 
@@ -281,26 +400,33 @@ create_about (void)
 
 void get_current_levels() {
 
-	ioctl(mixer_fd,MIXER_READ(SOUND_MIXER_VOLUME), &tmpvol);
-	orig.mainvol=tmpvol.left;
-	gtk_adjustment_set_value(GTK_ADJUSTMENT(vol_adjustment), (double) tmpvol.left);
+	int tmpvol = getvol();
+	gtk_adjustment_set_value(GTK_ADJUSTMENT(vol_adjustment), (double) tmpvol);
 
 }
 
 
-void get_mute_state() {
+int get_mute_state() {
 
-ioctl(mixer_fd,MIXER_READ(SOUND_MIXER_VOLUME), &tmpvol);
+	int muted;
+	int tmpvol = getvol();
+	char tooltip [60];
+	
+	snd_mixer_selem_get_playback_switch(elem, SND_MIXER_SCHN_FRONT_LEFT, &muted);
 
-	if( tmpvol.left > 0 ) {
+	if( muted == 1 ) {
 		gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (checkbutton1), FALSE);
 		icon0 = create_pixbuf ("obmixer-a.png");
+		sprintf(tooltip, "Volume: %d %%", tmpvol);
 	} else {
 		gtk_toggle_button_set_active (GTK_TOGGLE_BUTTON (checkbutton1), TRUE);
   		icon0 = create_pixbuf ("obmixer-i.png");
+		sprintf(tooltip, "Volume: %d %%\nMuted", tmpvol);
 	}
-
-gtk_status_icon_set_from_pixbuf(tray_icon, icon0);
+	
+	gtk_status_icon_set_tooltip(tray_icon, tooltip);
+	gtk_status_icon_set_from_pixbuf(tray_icon, icon0);
+	return muted;
 
 }
 
@@ -313,9 +439,7 @@ void hide_me() {
 main (int argc, char *argv[])
 {
 
-	mixer_fd = open ("/dev/mixer", O_RDWR, 0);
-	if (mixer_fd < 0)
-		printf ("Error opening mixer device\n"), exit (1);
+	alsaset();
 
 	GtkWidget *window1;
 	GtkWidget *menu;
@@ -341,8 +465,7 @@ main (int argc, char *argv[])
 	g_signal_connect(G_OBJECT(tray_icon), "activate", G_CALLBACK(tray_icon_on_click), NULL);
 
 	gtk_main ();
-	
-	close(mixer_fd);
+	snd_mixer_close(handle);
 	return 0;
 
 }

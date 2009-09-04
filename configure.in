@@ -11,6 +11,16 @@ AM_PROG_CC_STDC
 AC_HEADER_STDC
 
 pkg_modules="gtk+-2.0 >= 2.0.0"
+
+echo -n "checking for alsasound ... "
+if pkg-config --exists  alsa ; then
+        echo "yes"
+pkg_modules="$pkg_modules alsa"
+else
+        echo "no"
+        AC_MSG_ERROR(alsa not found)
+fi
+
 PKG_CHECK_MODULES(PACKAGE, [$pkg_modules])
 AC_SUBST(PACKAGE_CFLAGS)
 AC_SUBST(PACKAGE_LIBS)

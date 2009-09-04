@@ -6,16 +6,9 @@ GtkWidget* create_window1 (void);
 GtkWidget* create_menu (void);
 GtkWidget* create_about (void);
 
+int setvol(int vol);
+void setmute();
+int getvol();
 void get_current_levels();
-void get_mute_state();
+int get_mute_state();
 void hide_me();
-
-struct originalset
-{
-  unsigned char mainvol;
-  unsigned char pcm;
-  unsigned char speaker;
-  unsigned char line1;
-  unsigned char cd;
-  unsigned char mic;
-};

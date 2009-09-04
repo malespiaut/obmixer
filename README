@@ -1,4 +1,4 @@
-To install this package cd to this directory and run;
+To install this program cd to this directory and run;
 
 ./autogen.sh
 make
