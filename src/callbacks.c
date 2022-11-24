@@ -16,9 +16,6 @@
 #include "main.h"
 #include "support.h"
 
-GtkWidget *window1;
-GtkWidget *checkbutton1;
-GtkAdjustment *vol_adjustment;
 int volume;
 extern int volume;
 

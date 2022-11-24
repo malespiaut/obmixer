@@ -1,5 +1,8 @@
 #include <gtk/gtk.h>
 
+extern GtkAdjustment *vol_adjustment;
+extern GtkWidget *checkbutton1;
+extern GtkWidget *window1;
 
 void
 on_checkbutton1_clicked                (GtkButton       *button,
